@@ -67,14 +67,13 @@ if (targetXHandles.length === 0) {
 }
 
 export const config = {
-  pumpPortalWss: 'wss://pumpportal.fun/api/data',
-  tradeLocalUrl: 'https://pumpportal.fun/api/trade-local',
   targetXHandles,
   targetXSet: new Set(targetXHandles),
   logMode: getLogMode(),
   autoBuyEnabled: getBoolean('AUTO_BUY_ENABLED', false),
   dryRun: getBoolean('DRY_RUN', true),
   rpcEndpoint: getEnv('RPC_ENDPOINT', 'https://api.mainnet-beta.solana.com'),
+  rpcWssEndpoint: getEnv('RPC_WSS_ENDPOINT', toWssEndpoint(getEnv('RPC_ENDPOINT', 'https://api.mainnet-beta.solana.com'))),
   privateKeyBase58: getEnv('PRIVATE_KEY_BASE58', ''),
   buyAmountSol: getNumber('BUY_AMOUNT_SOL', 0.01, { min: 0 }),
   buySlippagePercent: getNumber('BUY_SLIPPAGE_PERCENT', getNumber('SLIPPAGE_PERCENT', 10, { min: 0 }), { min: 0 }),
@@ -87,11 +86,31 @@ export const config = {
   takeProfitMultiplier: getNumber('TAKE_PROFIT_MULTIPLIER', 2, { min: 1 }),
   takeProfitPollIntervalMs: getNumber('TAKE_PROFIT_POLL_INTERVAL_MS', 1000, { min: 250 }),
   takeProfitMaxDurationMs: getNumber('TAKE_PROFIT_MAX_DURATION_MS', 900000, { min: 1000 }),
+  flatExitEnabled: getBoolean('FLAT_EXIT_ENABLED', true),
+  flatExitDelayMs: getNumber('FLAT_EXIT_DELAY_MS', 30000, { min: 1000 }),
+  flatExitMaxGainPercent: getNumber('FLAT_EXIT_MAX_GAIN_PERCENT', 0, { min: 0 }),
   pumpStateCacheMs: getNumber('PUMP_STATE_CACHE_MS', 30000, { min: 0 }),
-  staleEventMs: getNumber('STALE_EVENT_MS', 10000, { min: 0 }),
-  metadataTimeoutMs: getNumber('METADATA_TIMEOUT_MS', 2500, { min: 100 }),
+  staleEventMs: getNumber('STALE_EVENT_MS', 0, { min: 0 }),
+  metadataTimeoutMs: getNumber('METADATA_TIMEOUT_MS', 5000, { min: 100 }),
+  transactionFetchRetries: getNumber('TRANSACTION_FETCH_RETRIES', 20, { min: 1 }),
+  transactionFetchRetryMs: getNumber('TRANSACTION_FETCH_RETRY_MS', 300, { min: 50 }),
+  backfillEnabled: getBoolean('BACKFILL_ENABLED', true),
+  backfillMaxSignatures: getNumber('BACKFILL_MAX_SIGNATURES', 50000, { min: 1 }),
+  listenerStatePath: getEnv('LISTENER_STATE_PATH', '.state/pump-listener.json'),
   reconnectBaseMs: getNumber('RECONNECT_BASE_MS', 500, { min: 100 }),
   reconnectMaxMs: getNumber('RECONNECT_MAX_MS', 10000, { min: 1000 }),
   wssPingIntervalMs: getNumber('WSS_PING_INTERVAL_MS', 15000, { min: 1000 }),
   wssIdleTimeoutMs: getNumber('WSS_IDLE_TIMEOUT_MS', 45000, { min: 5000 })
 };
+
+function toWssEndpoint(endpoint) {
+  if (endpoint.startsWith('https://')) {
+    return `wss://${endpoint.slice('https://'.length)}`;
+  }
+
+  if (endpoint.startsWith('http://')) {
+    return `ws://${endpoint.slice('http://'.length)}`;
+  }
+
+  return endpoint;
+}

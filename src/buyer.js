@@ -26,6 +26,7 @@ export class PumpBuyer {
     this.pumpState = null;
     this.pumpStateFetchedAt = 0;
     this.activeTakeProfits = new Map();
+    this.activeFlatExits = new Map();
   }
 
   async buy(event) {
@@ -82,6 +83,10 @@ export class PumpBuyer {
 
     if (this.config.takeProfitEnabled) {
       this.startTakeProfitMonitor(position);
+    }
+
+    if (this.config.flatExitEnabled) {
+      this.startFlatExitMonitor(position);
     }
 
     return { signature, tokenAmount: amount.toString() };
@@ -196,6 +201,22 @@ export class PumpBuyer {
     this.logger.info(`take-profit armed for ${position.mintString} at ${this.config.takeProfitMultiplier}x`);
   }
 
+  startFlatExitMonitor(position) {
+    if (this.activeFlatExits.has(position.mintString)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.activeFlatExits.delete(position.mintString);
+      this.checkFlatExit(position).catch((error) => {
+        this.logger.warn(`flat-exit check failed for ${position.mintString}: ${error.message}`);
+      });
+    }, this.config.flatExitDelayMs);
+
+    this.activeFlatExits.set(position.mintString, timer);
+    this.logger.info(`flat-exit armed for ${position.mintString} after ${this.config.flatExitDelayMs}ms`);
+  }
+
   async checkTakeProfit(position) {
     if (Date.now() - position.openedAt > this.config.takeProfitMaxDurationMs) {
       this.stopTakeProfitMonitor(position.mintString, 'max duration reached');
@@ -227,6 +248,33 @@ export class PumpBuyer {
     await this.sellPosition(position, sellAmount);
   }
 
+  async checkFlatExit(position) {
+    const tokenBalance = await this.getTokenBalance(position);
+    if (tokenBalance.isZero()) {
+      this.stopTakeProfitMonitor(position.mintString, 'position balance is zero');
+      return;
+    }
+
+    const sellAmount = tokenBalance;
+    const quotedSol = await this.getSellQuote(position, sellAmount);
+    const maxHoldSol = position.buySolLamports
+      .muln(Math.floor((100 + this.config.flatExitMaxGainPercent) * 10000))
+      .divn(100 * 10000);
+
+    if (quotedSol.lt(position.buySolLamports)) {
+      this.logger.info(`flat-exit skipped for ${position.mintString}: quote is below entry`);
+      return;
+    }
+
+    if (quotedSol.gt(maxHoldSol)) {
+      this.logger.info(`flat-exit skipped for ${position.mintString}: quote moved above threshold`);
+      return;
+    }
+
+    this.stopTakeProfitMonitor(position.mintString, 'flat-exit selling full position');
+    await this.sellPosition(position, sellAmount);
+  }
+
   async sellPosition(position, amount) {
     const keypair = this.getKeypair();
     const { global, feeConfig } = await this.getPumpState();
@@ -253,6 +301,19 @@ export class PumpBuyer {
 
     const signature = await this.sendInstructions(instructions, keypair);
     this.logger.info(`take-profit sold ${position.mintString}: https://solscan.io/tx/${signature}`);
+  }
+
+  async getSellQuote(position, amount) {
+    const { global, feeConfig } = await this.getPumpState();
+    const sellState = await this.sdk.fetchSellState(position.mint, this.getKeypair().publicKey, position.tokenProgram);
+
+    return getSellSolAmountFromTokenAmount({
+      global,
+      feeConfig,
+      mintSupply: sellState.bondingCurve.tokenTotalSupply,
+      bondingCurve: sellState.bondingCurve,
+      amount
+    });
   }
 
   stopTakeProfitMonitor(mintString, reason) {
