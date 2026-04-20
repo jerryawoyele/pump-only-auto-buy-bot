@@ -27,6 +27,7 @@ let lastSocketActivityMs = 0;
 let shuttingDown = false;
 let messageQueue = Promise.resolve();
 let cursorBlockedSignature = null;
+let stateWriteFailed = false;
 
 await listenerState.load();
 start();
@@ -88,7 +89,7 @@ async function handleMessage(raw) {
   }
 
   if (!parser.hasCreateLog(parsed.logs)) {
-    await listenerState.saveCursor(parsed.signature, parsed.slot);
+    await advanceCursor(parsed.signature, parsed.slot);
     return;
   }
 
@@ -116,13 +117,13 @@ async function processSignature(signature, slot = null) {
   }
 
   if (parsed.kind === 'ignore') {
-    await listenerState.saveCursor(signature, slot);
+    await advanceCursor(signature, slot);
     return;
   }
 
   if (parsed.kind === 'reject') {
     logReject(parsed.reason, parsed.mint ?? signature);
-    await listenerState.saveCursor(signature, slot);
+    await advanceCursor(signature, slot);
     return;
   }
 
@@ -133,20 +134,20 @@ async function processSignature(signature, slot = null) {
 
   if (processedMints.has(event.mint)) {
     logReject('already_processed', event.mint);
-    await listenerState.saveCursor(signature, event.slot ?? slot);
+    await advanceCursor(signature, event.slot ?? slot);
     return;
   }
   processedMints.add(event.mint);
 
   if (isStaleEvent(event, config.staleEventMs)) {
     logReject('stale_event', event.mint);
-    await listenerState.saveCursor(signature, event.slot ?? slot);
+    await advanceCursor(signature, event.slot ?? slot);
     return;
   }
 
   if (isMigratedOrCompleted(event)) {
     logReject('already_migrated_or_completed', event.mint);
-    await listenerState.saveCursor(signature, event.slot ?? slot);
+    await advanceCursor(signature, event.slot ?? slot);
     return;
   }
 
@@ -155,26 +156,26 @@ async function processSignature(signature, slot = null) {
     metadata = await fetchMetadata(event.uri, config.metadataTimeoutMs);
   } catch (error) {
     logReject(`metadata_fetch_failed:${error.message}`, event.mint);
-    await listenerState.saveCursor(signature, event.slot ?? slot);
+    await advanceCursor(signature, event.slot ?? slot);
     return;
   }
 
   const metadataX = extractXHandleFromMetadata(metadata);
   if (!metadataX) {
     logReject('missing_metadata_x', event.mint);
-    await listenerState.saveCursor(signature, event.slot ?? slot);
+    await advanceCursor(signature, event.slot ?? slot);
     return;
   }
 
   if (!config.targetXSet.has(metadataX)) {
     logReject(`x_mismatch:${metadataX}`, event.mint);
-    await listenerState.saveCursor(signature, event.slot ?? slot);
+    await advanceCursor(signature, event.slot ?? slot);
     return;
   }
 
   console.info(`matched ${event.mint} (${event.symbol ?? 'unknown symbol'}) with X handle "${metadataX}" from ${signature}`);
   await buyer.buy(event);
-  await listenerState.saveCursor(signature, event.slot ?? slot);
+  await advanceCursor(signature, event.slot ?? slot);
 }
 
 async function backfill(untilSignature) {
@@ -225,6 +226,17 @@ function enqueue(task) {
     .catch((error) => {
       console.error(`queued task failed: ${error.message}`);
     });
+}
+
+async function advanceCursor(signature, slot = null) {
+  try {
+    await listenerState.saveCursor(signature, slot);
+  } catch (error) {
+    if (!stateWriteFailed) {
+      stateWriteFailed = true;
+      console.warn(`listener state persistence disabled: ${error.message}`);
+    }
+  }
 }
 
 function scheduleReconnect() {

@@ -77,6 +77,7 @@ After a real buy lands, the bot arms in-memory exit monitors. With the default `
 - Buy/sell transaction builder: official `@pump-fun/pump-sdk` local instruction construction.
 - Pool is Pump bonding curve only; there is no Raydium, PumpSwap, PumpPortal `trade-local`, or `auto` routing.
 - Coverage-first defaults use `STALE_EVENT_MS=0`, so delayed and backfilled creates are still metadata-checked. Use a positive value only if you prefer speed-only trading over never missing relevant target X metadata.
+- Fly.io does not allow the app user to write under `/app`. This repo mounts a Fly volume at `/data` and sets `LISTENER_STATE_PATH=/data/pump-listener.json` for durable cursor state across Machine replacement. Create the volume once before deploying with `fly volumes create pump_state --region iad --size 1`.
 - Take-profit state is currently in memory. If the worker restarts after buying, it will not resume monitoring that position unless durable position storage is added.
 
 ## Fly.io Worker Deployment
