@@ -9,11 +9,12 @@ kill_timeout = "5s"
 
 [processes]
   worker = "npm run worker"
+  min_machines_running = 0
 
 [env]
   NODE_ENV = "production"
-  DRY_RUN = "true"
-  AUTO_BUY_ENABLED = "false"
+  DRY_RUN = "false"
+  AUTO_BUY_ENABLED = "true"
 
 [[vm]]
   processes = ["worker"]
