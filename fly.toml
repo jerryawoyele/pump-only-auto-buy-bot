@@ -1,0 +1,21 @@
+# Change this app name before first deploy, or let `fly launch` generate one.
+app = "pump-only-auto-buy-bot"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "5s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[processes]
+  worker = "npm run worker"
+
+[env]
+  NODE_ENV = "production"
+  DRY_RUN = "true"
+  AUTO_BUY_ENABLED = "false"
+
+[[vm]]
+  processes = ["worker"]
+  size = "shared-cpu-1x"
+  memory = "512mb"
