@@ -3,13 +3,12 @@ app = "pump-only-auto-buy-bot"
 primary_region = "iad"
 kill_signal = "SIGTERM"
 kill_timeout = "5s"
+min_machines_running = 0
 
 [build]
-  dockerfile = "Dockerfile"
 
 [processes]
   worker = "npm run worker"
-  min_machines_running = 0
 
 [env]
   NODE_ENV = "production"
@@ -18,5 +17,6 @@ kill_timeout = "5s"
 
 [[vm]]
   processes = ["worker"]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
